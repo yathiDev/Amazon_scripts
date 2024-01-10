@@ -1,0 +1,74 @@
+pipeline{
+    agent any
+
+    stages {
+        stage('Setup') {
+            steps {
+                script {
+                    // Add Helm repositories
+                    sh 'helm repo add stable https://charts.helm.sh/stable'
+                    sh 'helm repo add prometheus-community https://prometheus-community.github.io/helm-charts'
+                }
+            }
+        }
+        stage('Deploy Prometheus') {
+            steps {
+                script {
+
+                        withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8s', namespace: '', restrictKubeConfigAccess: false, serverUrl: '') {
+
+                           // Check if the namespace 'prometheus' exists
+                                def namespaceExists = sh(script: 'kubectl get namespace prometheus', returnStatus: true) == 0
+
+                                // If the namespace doesn't exist, create it and install Prometheus using Helm
+                                if (!namespaceExists) {
+                                    sh 'kubectl create namespace prometheus'
+                                    sh 'helm install stable prometheus-community/kube-prometheus-stack -n prometheus'
+                                } else {
+                                    echo 'Namespace prometheus already exists.'
+                                }
+
+
+                        }
+
+                }
+            }
+        }
+        stage('Patch Services') {
+            steps {
+                script {
+                    withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8s', namespace: '', restrictKubeConfigAccess: false, serverUrl: '') {
+
+                    // Patch Prometheus service to use ClusterIP
+                    sh 'kubectl patch svc stable-kube-prometheus-sta-prometheus -n prometheus --type=json -p=\'[{"op":"replace","path":"/spec/type","value":"LoadBalancer"}]\'' 
+
+                    // Patch Grafana service to use ClusterIP
+                    sh 'kubectl patch svc stable-grafana -n prometheus --type=json -p=\'[{"op":"replace","path":"/spec/type","value":"LoadBalancer"}]\'' 
+                     }
+                }     
+            }
+        }
+
+        stage('Get Service URLs') {
+            steps {
+                script {
+                    withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8s', namespace: '', restrictKubeConfigAccess: false, serverUrl: '') {
+
+                    // Get the external IP or hostname of the service
+                   def prometheus = sh(script: 'kubectl get svc stable-kube-prometheus-sta-prometheus -n prometheus -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"', returnStdout: true).trim()
+
+                     // Get the external IP or hostname of the service
+                   def grafana = sh(script: 'kubectl get svc stable-grafana -n prometheus -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"', returnStdout: true).trim()
+
+
+
+                     echo "Service URL for prometheus: http://${prometheus}:9090"
+                      echo "Service URL for grafana : http://${grafana}/"
+                    }
+                }
+            }
+        }
+    }
+
+
+}
