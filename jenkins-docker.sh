@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "installing all required packages..."
 sudo apt update -y
 sudo apt install fontconfig openjdk-17-jre -y
 java -version
